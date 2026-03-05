@@ -43,7 +43,7 @@ AI-powered process discovery for solutions architects. Record how people actuall
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/recordflow.git
+git clone https://github.com/kaantaskentt/recordflow.git
 cd recordflow
 npm install
 ```
