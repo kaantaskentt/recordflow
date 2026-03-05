@@ -1,10 +1,10 @@
-# RecordIt
+# RecordFlow
 
 AI-powered process discovery for solutions architects. Record how people actually work, let AI extract every step, and get structured automation specs.
 
 ## What It Does
 
-1. **Record** -- Share your screen and narrate your workflow. RecordIt captures video, audio, screenshots (every 7s), and real-time voice transcription simultaneously.
+1. **Record** -- Share your screen and narrate your workflow. RecordFlow captures video, audio, screenshots (every 7s), and real-time voice transcription simultaneously.
 
 2. **Analyze** -- Two AI models work together. Gemini 2.5 Flash watches your screen frames and extracts structured steps. Claude Sonnet 4.6 detects gaps in the process and generates targeted follow-up questions.
 
@@ -43,8 +43,8 @@ AI-powered process discovery for solutions architects. Record how people actuall
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/recordit.git
-cd recordit
+git clone https://github.com/YOUR_USERNAME/recordflow.git
+cd recordflow
 npm install
 ```
 

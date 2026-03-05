@@ -1,4 +1,4 @@
-# RecordIt -- Project Context
+# RecordFlow -- Project Context
 
 ## Overview
 AI-powered process discovery for solutions architects. Records client workflows via screen capture + voice narration, extracts steps with AI, classifies automation potential, and generates build specs.
