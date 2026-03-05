@@ -11,6 +11,8 @@ import {
   Loader2,
   ArrowRight,
   MessageSquare,
+  Plus,
+  Send,
 } from "lucide-react";
 import { formatDuration } from "@/lib/utils";
 import type { Session, LogEntry } from "@/lib/types";
@@ -588,7 +590,7 @@ export default function RecordPage({
           />
         )}
         {phase === "done" && (
-          <DonePhase log={log} elapsed={elapsed} frameCount={frameCount} />
+          <DonePhase log={log} elapsed={elapsed} frameCount={frameCount} sessionId={sessionId} />
         )}
       </main>
     </div>
@@ -910,13 +912,42 @@ function DonePhase({
   log,
   elapsed,
   frameCount,
+  sessionId,
 }: {
   log: LogEntry[];
   elapsed: number;
   frameCount: number;
+  sessionId: string;
 }) {
+  const [noteText, setNoteText] = useState("");
+  const [savedNotes, setSavedNotes] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+
   const voiceNotes = log.filter((l) => l.type === "voice").length;
   const typedNotes = log.filter((l) => l.type === "narration").length;
+
+  async function addNote() {
+    if (!noteText.trim() || saving) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/sessions/narrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          timestamp: elapsed,
+          text: noteText.trim(),
+          source: "post_recording",
+        }),
+      });
+      if (res.ok) {
+        setSavedNotes((prev) => [...prev, noteText.trim()]);
+        setNoteText("");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-16 text-center">
@@ -965,6 +996,54 @@ function DonePhase({
           <div className="font-mono text-[10px] text-[rgba(229,231,235,0.3)] uppercase tracking-wider">
             Frames
           </div>
+        </div>
+      </div>
+
+      {/* Post-recording notes */}
+      <div className="mb-8 text-left">
+        <p className="font-mono text-xs font-semibold text-[rgba(229,231,235,0.5)] uppercase tracking-wider mb-3">
+          Remember something extra? Add a note
+        </p>
+        {savedNotes.length > 0 && (
+          <div className="mb-3 space-y-2">
+            {savedNotes.map((note, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-2 p-2.5 rounded bg-green-500/5 border border-green-500/10 text-left"
+              >
+                <CheckCircle className="w-3.5 h-3.5 text-green-400 mt-0.5 shrink-0" />
+                <span className="font-mono text-xs text-[rgba(229,231,235,0.6)]">
+                  {note}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <textarea
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                addNote();
+              }
+            }}
+            placeholder="e.g. The approval threshold is $5,000, I forgot to mention that..."
+            rows={2}
+            className="flex-1 px-3 py-2 font-mono text-xs bg-[#0f0f0f] border border-[rgba(229,231,235,0.1)] rounded text-[#e5e7eb] placeholder:text-[rgba(229,231,235,0.2)] focus:outline-none focus:border-green-500/30 resize-none"
+          />
+          <button
+            onClick={addNote}
+            disabled={!noteText.trim() || saving}
+            className="self-end px-3 py-2 bg-green-500/10 border border-green-500/20 rounded text-green-400 font-mono text-xs font-semibold hover:bg-green-500/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            {saving ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Send className="w-3.5 h-3.5" />
+            )}
+          </button>
         </div>
       </div>
 

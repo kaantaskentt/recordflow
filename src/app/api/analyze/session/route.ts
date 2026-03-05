@@ -15,6 +15,13 @@ export async function POST(request: Request) {
 
     const summary = await runAnalysisPipeline(result.data.session_id);
 
+    if (summary.skipped) {
+      return NextResponse.json(
+        { error: "Analysis already in progress or completed" },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json({
       message: "Analysis complete",
       ...summary,

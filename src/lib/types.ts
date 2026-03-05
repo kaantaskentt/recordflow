@@ -3,7 +3,13 @@
 // ============================================
 
 export type ProjectStatus = "active" | "completed" | "archived";
-export type SessionStatus = "pending" | "recording" | "processing" | "reviewed";
+export type SessionStatus =
+  | "pending"
+  | "recording"
+  | "processing"
+  | "analyzing"
+  | "reviewed";
+export type AnalysisStage = "frames" | "steps" | "gaps" | "followups";
 export type ActionType =
   | "navigation"
   | "data_entry"
@@ -14,6 +20,7 @@ export type ActionType =
   | "transformation";
 export type Complexity = "automate" | "ai_assist" | "manual";
 export type FollowUpStatus = "pending" | "sent" | "answered";
+export type NarrationSource = "voice" | "typed" | "post_recording";
 
 // ---- Projects ----
 
@@ -57,6 +64,8 @@ export interface Session {
   instructions: string | null;
   recording_url: string | null;
   duration_seconds: number | null;
+  analysis_stage: AnalysisStage | null;
+  analysis_error: string | null;
   created_at: string;
   completed_at: string | null;
 }
@@ -97,6 +106,7 @@ export interface Narration {
   session_id: string;
   timestamp: number;
   text: string;
+  source: NarrationSource;
 }
 
 // ---- Recording Log (client-side) ----

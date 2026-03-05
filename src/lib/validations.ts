@@ -30,7 +30,7 @@ export const createSessionSchema = z.object({
 });
 
 export const updateSessionSchema = z.object({
-  status: z.enum(["pending", "recording", "processing", "reviewed"]).optional(),
+  status: z.enum(["pending", "recording", "processing", "analyzing", "reviewed"]).optional(),
   duration_seconds: z.number().int().min(0).optional(),
   recording_url: z.string().url().optional().nullable(),
   completed_at: z.string().datetime().optional().nullable(),
@@ -42,6 +42,7 @@ export const createNarrationSchema = z.object({
   session_id: z.string().uuid("Invalid session ID"),
   timestamp: z.number().min(0),
   text: z.string().min(1, "Narration text is required").max(5000),
+  source: z.enum(["voice", "typed", "post_recording"]).optional(),
 });
 
 // ---- Briefing Analysis ----

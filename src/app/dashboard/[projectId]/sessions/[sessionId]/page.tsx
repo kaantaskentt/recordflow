@@ -14,6 +14,8 @@ import {
   X,
   Send,
   CheckCircle,
+  RotateCcw,
+  StickyNote,
   Play,
   Video,
   Copy,
@@ -21,12 +23,15 @@ import {
   Volume2,
   VolumeX,
   Maximize,
+  Brain,
+  CheckCircle2,
 } from "lucide-react";
 import { formatDuration, timeAgo } from "@/lib/utils";
 import type {
   Session,
   Step,
   FollowUp,
+  Narration,
   ActionType,
   Complexity,
   WatchListItem,
@@ -42,17 +47,31 @@ export default function SessionDetailPage({
   const [steps, setSteps] = useState<Step[]>([]);
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [watchList, setWatchList] = useState<WatchListItem[]>([]);
+  const [narrations, setNarrations] = useState<Narration[]>([]);
   const [loading, setLoading] = useState(true);
+  const [noteText, setNoteText] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+  const [reanalyzing, setReanalyzing] = useState(false);
   const [activeView, setActiveView] = useState<"steps" | "followups" | "watchlist">("steps");
   const [currentTime, setCurrentTime] = useState(0);
   const [videoError, setVideoError] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  useEffect(() => {
-    Promise.all([fetchSession(), fetchSteps(), fetchFollowUps(), fetchWatchList()]).then(() =>
-      setLoading(false)
-    );
+  const fetchAll = useCallback(() => {
+    return Promise.all([fetchSession(), fetchSteps(), fetchFollowUps(), fetchWatchList(), fetchNarrations()]);
   }, [sessionId]);
+
+  useEffect(() => {
+    fetchAll().then(() => setLoading(false));
+  }, [fetchAll]);
+
+  // Poll while analyzing
+  const isAnalyzing = session?.status === "analyzing";
+  useEffect(() => {
+    if (!isAnalyzing) return;
+    const interval = setInterval(fetchAll, 5000);
+    return () => clearInterval(interval);
+  }, [isAnalyzing, fetchAll]);
 
   async function fetchSession() {
     const res = await fetch(`/api/sessions/${sessionId}`);
@@ -74,6 +93,55 @@ export default function SessionDetailPage({
     if (res.ok) {
       const project = await res.json();
       setWatchList(project.watch_list || []);
+    }
+  }
+
+  async function fetchNarrations() {
+    const res = await fetch(`/api/sessions/narrations?session_id=${sessionId}`);
+    if (res.ok) setNarrations(await res.json());
+  }
+
+  async function addPostNote() {
+    if (!noteText.trim() || savingNote) return;
+    setSavingNote(true);
+    try {
+      const res = await fetch("/api/sessions/narrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          timestamp: session?.duration_seconds || 0,
+          text: noteText.trim(),
+          source: "post_recording",
+        }),
+      });
+      if (res.ok) {
+        setNoteText("");
+        fetchNarrations();
+      }
+    } finally {
+      setSavingNote(false);
+    }
+  }
+
+  async function reanalyze() {
+    if (reanalyzing) return;
+    setReanalyzing(true);
+    try {
+      // Reset session to processing so pipeline can run
+      await fetch(`/api/sessions/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "processing" }),
+      });
+      await fetch("/api/analyze/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      fetchAll();
+    } finally {
+      setReanalyzing(false);
     }
   }
 
@@ -110,6 +178,7 @@ export default function SessionDetailPage({
     );
   }
 
+  const postNotes = narrations.filter((n) => n.source === "post_recording");
   const automateCount = steps.filter((s) => s.complexity === "automate").length;
   const aiAssistCount = steps.filter(
     (s) => s.complexity === "ai_assist"
@@ -133,7 +202,16 @@ export default function SessionDetailPage({
           <h1 className="font-mono font-bold text-2xl text-[#e5e7eb]">
             {session.title}
           </h1>
-          <span className="px-2 py-0.5 rounded font-mono text-[10px] font-bold tracking-wider uppercase bg-green-500/10 text-green-400">
+          <span
+            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-mono text-[10px] font-bold tracking-wider uppercase ${
+              session.status === "analyzing"
+                ? "bg-purple-500/10 text-purple-400"
+                : "bg-green-500/10 text-green-400"
+            }`}
+          >
+            {session.status === "analyzing" && (
+              <Brain className="w-3 h-3 animate-pulse" />
+            )}
             {session.status}
           </span>
         </div>
@@ -149,6 +227,62 @@ export default function SessionDetailPage({
           <span>{followUps.length} follow-ups</span>
         </div>
       </div>
+
+      {/* Analyzing Banner */}
+      {session.status === "analyzing" && (
+        <div className="mb-6 p-4 rounded-lg bg-purple-500/5 border border-purple-500/20">
+          <div className="flex items-center gap-3">
+            <Brain className="w-5 h-5 text-purple-400 animate-pulse" />
+            <div>
+              <p className="font-mono text-sm font-semibold text-purple-400">
+                Analysis in progress
+              </p>
+              <div className="flex items-center gap-2 mt-1.5">
+                {(
+                  [
+                    { key: "frames", label: "Frames" },
+                    { key: "steps", label: "Steps" },
+                    { key: "gaps", label: "Gaps" },
+                    { key: "followups", label: "Follow-ups" },
+                  ] as const
+                ).map((s, idx, arr) => {
+                  const currentIdx = arr.findIndex(
+                    (a) => a.key === session.analysis_stage
+                  );
+                  const isComplete = idx < currentIdx;
+                  const isCurrent = idx === currentIdx;
+                  return (
+                    <div key={s.key} className="flex items-center gap-1">
+                      {idx > 0 && (
+                        <div
+                          className={`w-3 h-px ${isComplete ? "bg-green-500/50" : "bg-[rgba(229,231,235,0.1)]"}`}
+                        />
+                      )}
+                      <span
+                        className={`inline-flex items-center gap-1 font-mono text-[10px] font-semibold ${
+                          isComplete
+                            ? "text-green-400/60"
+                            : isCurrent
+                              ? "text-purple-400"
+                              : "text-[rgba(229,231,235,0.15)]"
+                        }`}
+                      >
+                        {isComplete && (
+                          <CheckCircle2 className="w-2.5 h-2.5" />
+                        )}
+                        {isCurrent && (
+                          <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                        )}
+                        {s.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Video Player */}
       {session.recording_url && (
@@ -266,6 +400,85 @@ export default function SessionDetailPage({
       {activeView === "watchlist" && (
         <WatchListCoverage watchList={watchList} steps={steps} />
       )}
+
+      {/* Post-Recording Notes */}
+      <div className="mt-10 pt-8 border-t border-[rgba(34,197,94,0.08)]">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <StickyNote className="w-4 h-4 text-green-400" />
+            <span className="font-mono text-xs font-semibold text-[rgba(229,231,235,0.6)] uppercase tracking-wider">
+              Additional Notes
+            </span>
+            {postNotes.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded font-mono text-[9px] font-bold bg-green-500/10 text-green-400">
+                {postNotes.length}
+              </span>
+            )}
+          </div>
+          {session.status === "reviewed" && postNotes.length > 0 && (
+            <button
+              onClick={reanalyze}
+              disabled={reanalyzing}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 font-mono text-[10px] font-semibold text-amber-400 border border-amber-500/20 rounded hover:bg-amber-500/10 transition-colors disabled:opacity-50"
+            >
+              {reanalyzing ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <RotateCcw className="w-3 h-3" />
+              )}
+              Re-analyze with notes
+            </button>
+          )}
+        </div>
+
+        {postNotes.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {postNotes.map((n) => (
+              <div
+                key={n.id}
+                className="flex items-start gap-2 p-3 rounded-lg bg-[#0f0f0f] border border-[rgba(229,231,235,0.05)]"
+              >
+                <StickyNote className="w-3.5 h-3.5 text-green-400/40 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-mono text-xs text-[rgba(229,231,235,0.6)]">
+                    {n.text}
+                  </p>
+                  <p className="font-mono text-[9px] text-[rgba(229,231,235,0.2)] mt-1">
+                    Added after recording
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <textarea
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                addPostNote();
+              }
+            }}
+            placeholder="Add extra context you remembered after recording..."
+            rows={2}
+            className="flex-1 px-3 py-2 font-mono text-xs bg-[#0f0f0f] border border-[rgba(229,231,235,0.1)] rounded text-[#e5e7eb] placeholder:text-[rgba(229,231,235,0.2)] focus:outline-none focus:border-green-500/30 resize-none"
+          />
+          <button
+            onClick={addPostNote}
+            disabled={!noteText.trim() || savingNote}
+            className="self-end px-3 py-2 bg-green-500/10 border border-green-500/20 rounded text-green-400 font-mono text-xs font-semibold hover:bg-green-500/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            {savingNote ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Send className="w-3.5 h-3.5" />
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

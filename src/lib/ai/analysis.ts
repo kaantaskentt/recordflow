@@ -122,6 +122,17 @@ function matchNarrationsToFrames(
   }
 }
 
+// ---- Helper: Update analysis stage in the database ----
+async function updateAnalysisStage(
+  sessionId: string,
+  stage: "frames" | "steps" | "gaps" | "followups" | null
+) {
+  await supabase
+    .from("sessions")
+    .update({ analysis_stage: stage })
+    .eq("id", sessionId);
+}
+
 export async function runAnalysisPipeline(sessionId: string) {
   // ---- Fetch session + project data ----
   const { data: session, error: sessionError } = await supabase
@@ -133,6 +144,33 @@ export async function runAnalysisPipeline(sessionId: string) {
   if (sessionError || !session) {
     throw new Error(`Session not found: ${sessionError?.message}`);
   }
+
+  // ---- Idempotency guard: skip if already analyzing or reviewed ----
+  if (session.status === "analyzing" || session.status === "reviewed") {
+    return {
+      steps: 0,
+      gaps: 0,
+      follow_ups: 0,
+      frames_analyzed: 0,
+      skipped: true,
+    };
+  }
+
+  // ---- Transition to "analyzing" with initial stage ----
+  await supabase
+    .from("sessions")
+    .update({
+      status: "analyzing",
+      analysis_stage: "frames",
+      analysis_error: null,
+    })
+    .eq("id", sessionId);
+
+  try {
+
+  // ---- Clean up any existing steps/follow-ups (supports re-analysis) ----
+  await supabase.from("follow_ups").delete().eq("session_id", sessionId);
+  await supabase.from("steps").delete().eq("session_id", sessionId);
 
   const { data: project } = await supabase
     .from("projects")
@@ -192,6 +230,9 @@ export async function runAnalysisPipeline(sessionId: string) {
   // ---- Match narrations to closest frames ----
   matchNarrationsToFrames(frameDescriptions, narrationEntries);
 
+  // ---- Stage update: steps ----
+  await updateAnalysisStage(sessionId, "steps");
+
   // ---- Step 2: Step Extraction — Gemini 2.5 Flash ----
   // Build rich frame descriptions with matched narrations
   const enrichedFrames = frameDescriptions.map((f) => {
@@ -235,6 +276,9 @@ export async function runAnalysisPipeline(sessionId: string) {
     ? (parseJSON(stepsContent).steps as ExtractedStep[]) || []
     : [];
 
+  // ---- Stage update: gaps ----
+  await updateAnalysisStage(sessionId, "gaps");
+
   // ---- Step 3: Gap Detection — Claude Sonnet 4.6 (reasoning-critical) ----
   const gapPrompt = buildGapDetectionPrompt(
     extractedSteps.map((s) => ({
@@ -267,6 +311,9 @@ export async function runAnalysisPipeline(sessionId: string) {
       : "";
   const gapsParsed = gapsText ? parseJSON(gapsText) : { gaps: [] };
   const gaps: Gap[] = (gapsParsed.gaps as Gap[]) || [];
+
+  // ---- Stage update: followups ----
+  await updateAnalysisStage(sessionId, "followups");
 
   // ---- Step 4: Follow-up Generation — Gemini 2.5 Flash ----
   // Fetch previous follow-ups from other sessions in the same project for cross-session awareness
@@ -372,7 +419,7 @@ export async function runAnalysisPipeline(sessionId: string) {
   // ---- Update session status ----
   await supabase
     .from("sessions")
-    .update({ status: "reviewed" })
+    .update({ status: "reviewed", analysis_stage: null, analysis_error: null })
     .eq("id", sessionId);
 
   // ---- Auto-tag project ----
@@ -384,6 +431,22 @@ export async function runAnalysisPipeline(sessionId: string) {
     follow_ups: followUps.length,
     frames_analyzed: frameDescriptions.length,
   };
+
+  } catch (err) {
+    // On failure: revert to "processing" so user can retry, store the error
+    const errorMessage =
+      err instanceof Error ? err.message : "Unknown analysis error";
+    console.error("Analysis pipeline failed:", errorMessage);
+    await supabase
+      .from("sessions")
+      .update({
+        status: "processing",
+        analysis_stage: null,
+        analysis_error: errorMessage,
+      })
+      .eq("id", sessionId);
+    throw err;
+  }
 }
 
 // ---- Helper: Compute and update project-level tags + automation score ----

@@ -26,6 +26,10 @@ import {
   Check,
   Tag,
   Activity,
+  Brain,
+  CheckCircle2,
+  AlertTriangle,
+  RotateCcw,
 } from "lucide-react";
 import { timeAgo, formatDuration } from "@/lib/utils";
 import type { Project, Session } from "@/lib/types";
@@ -460,6 +464,50 @@ function BriefingTab({
   );
 }
 
+// ---- Analysis Progress Indicator ----
+
+const ANALYSIS_STAGES = [
+  { key: "frames", label: "Frames" },
+  { key: "steps", label: "Steps" },
+  { key: "gaps", label: "Gaps" },
+  { key: "followups", label: "Follow-ups" },
+] as const;
+
+function AnalysisProgress({ stage }: { stage?: string | null }) {
+  const currentIdx = ANALYSIS_STAGES.findIndex((s) => s.key === stage);
+
+  return (
+    <div className="flex items-center gap-1">
+      {ANALYSIS_STAGES.map((s, idx) => {
+        const isComplete = idx < currentIdx;
+        const isCurrent = idx === currentIdx;
+        return (
+          <div key={s.key} className="flex items-center gap-1">
+            {idx > 0 && (
+              <div
+                className={`w-2 h-px ${isComplete ? "bg-green-500/50" : "bg-[rgba(229,231,235,0.1)]"}`}
+              />
+            )}
+            <span
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[9px] font-semibold tracking-wider ${
+                isComplete
+                  ? "text-green-400/60"
+                  : isCurrent
+                    ? "text-purple-400 bg-purple-500/10"
+                    : "text-[rgba(229,231,235,0.15)]"
+              }`}
+            >
+              {isComplete && <CheckCircle2 className="w-2.5 h-2.5" />}
+              {isCurrent && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
+              {s.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ---- Sessions Tab ----
 
 function SessionsTab({
@@ -485,13 +533,15 @@ function SessionsTab({
     { id: string; name: string }[]
   >([]);
 
-  // Poll for updates while any session is processing
-  const hasProcessing = sessions.some((s) => s.status === "processing");
+  // Poll for updates while any session is processing or analyzing
+  const needsPolling = sessions.some(
+    (s) => s.status === "processing" || s.status === "analyzing"
+  );
   useEffect(() => {
-    if (!hasProcessing) return;
+    if (!needsPolling) return;
     const interval = setInterval(onUpdate, 5000);
     return () => clearInterval(interval);
-  }, [hasProcessing, onUpdate]);
+  }, [needsPolling, onUpdate]);
 
   async function analyzeSession(sessionId: string) {
     setAnalyzingId(sessionId);
@@ -735,13 +785,18 @@ function SessionsTab({
                         ? "bg-red-500/10 text-red-400"
                         : session.status === "processing"
                           ? "bg-blue-500/10 text-blue-400"
-                          : "bg-green-500/10 text-green-400"
+                          : session.status === "analyzing"
+                            ? "bg-purple-500/10 text-purple-400"
+                            : "bg-green-500/10 text-green-400"
                   }`}
                 >
                   {session.status === "processing" && (
                     <Loader2 className="w-3 h-3 animate-spin" />
                   )}
-                  {session.status}
+                  {session.status === "analyzing" && (
+                    <Brain className="w-3 h-3 animate-pulse" />
+                  )}
+                  {session.status === "analyzing" ? "analyzing" : session.status}
                 </span>
 
                 {/* Session Actions Dropdown */}
@@ -813,23 +868,54 @@ function SessionsTab({
                 Open
               </Link>
               {session.status === "processing" && (
-                <button
-                  onClick={() => analyzeSession(session.id)}
-                  disabled={analyzingId === session.id}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-green-500 text-black font-mono text-[10px] font-bold rounded hover:bg-green-400 transition-colors disabled:opacity-50"
-                >
-                  {analyzingId === session.id ? (
-                    <>
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Analyzing...
-                    </>
+                <>
+                  {session.analysis_error ? (
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-mono text-amber-400">
+                        <AlertTriangle className="w-3 h-3" />
+                        Analysis failed
+                      </span>
+                      <button
+                        onClick={() => analyzeSession(session.id)}
+                        disabled={analyzingId === session.id}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 text-black font-mono text-[10px] font-bold rounded hover:bg-amber-400 transition-colors disabled:opacity-50"
+                      >
+                        {analyzingId === session.id ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            Retrying...
+                          </>
+                        ) : (
+                          <>
+                            <RotateCcw className="w-3 h-3" />
+                            Retry
+                          </>
+                        )}
+                      </button>
+                    </div>
                   ) : (
-                    <>
-                      <Zap className="w-3 h-3" />
-                      Analyze
-                    </>
+                    <button
+                      onClick={() => analyzeSession(session.id)}
+                      disabled={analyzingId === session.id}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-green-500 text-black font-mono text-[10px] font-bold rounded hover:bg-green-400 transition-colors disabled:opacity-50"
+                    >
+                      {analyzingId === session.id ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Analyzing...
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="w-3 h-3" />
+                          Analyze
+                        </>
+                      )}
+                    </button>
                   )}
-                </button>
+                </>
+              )}
+              {session.status === "analyzing" && (
+                <AnalysisProgress stage={session.analysis_stage} />
               )}
               {session.status === "reviewed" && (
                 <Link
