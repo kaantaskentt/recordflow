@@ -72,7 +72,7 @@ interface FollowUpItem {
 }
 
 // ---- Helper: Parse JSON from LLM response (with fallback) ----
-function parseJSON(text: string): Record<string, unknown> {
+export function parseJSON(text: string): Record<string, unknown> {
   // Try direct parse
   try {
     return JSON.parse(text);
@@ -130,6 +130,17 @@ async function updateAnalysisStage(
   await supabase
     .from("sessions")
     .update({ analysis_stage: stage })
+    .eq("id", sessionId);
+}
+
+// ---- Helper: Save intermediate results for live visibility ----
+async function updateIntermediateResults(
+  sessionId: string,
+  data: Record<string, unknown>
+) {
+  await supabase
+    .from("sessions")
+    .update({ analysis_intermediate: data })
     .eq("id", sessionId);
 }
 
@@ -230,6 +241,16 @@ export async function runAnalysisPipeline(sessionId: string) {
   // ---- Match narrations to closest frames ----
   matchNarrationsToFrames(frameDescriptions, narrationEntries);
 
+  // ---- Save intermediate: frame descriptions ----
+  await updateIntermediateResults(sessionId, {
+    frame_descriptions: frameDescriptions.map((f) => ({
+      timestamp: f.timestamp,
+      app: f.app,
+      action: f.action,
+    })),
+    stage_completed: "frames",
+  });
+
   // ---- Stage update: steps ----
   await updateAnalysisStage(sessionId, "steps");
 
@@ -276,6 +297,23 @@ export async function runAnalysisPipeline(sessionId: string) {
     ? (parseJSON(stepsContent).steps as ExtractedStep[]) || []
     : [];
 
+  // ---- Save intermediate: preliminary steps ----
+  await updateIntermediateResults(sessionId, {
+    frame_descriptions: frameDescriptions.map((f) => ({
+      timestamp: f.timestamp,
+      app: f.app,
+      action: f.action,
+    })),
+    preliminary_steps: extractedSteps.map((s) => ({
+      step_number: s.step_number,
+      description: s.description,
+      tools_detected: s.tools_detected,
+      action_type: s.action_type,
+      complexity: s.complexity,
+    })),
+    stage_completed: "steps",
+  });
+
   // ---- Stage update: gaps ----
   await updateAnalysisStage(sessionId, "gaps");
 
@@ -311,6 +349,24 @@ export async function runAnalysisPipeline(sessionId: string) {
       : "";
   const gapsParsed = gapsText ? parseJSON(gapsText) : { gaps: [] };
   const gaps: Gap[] = (gapsParsed.gaps as Gap[]) || [];
+
+  // ---- Save intermediate: gaps count ----
+  await updateIntermediateResults(sessionId, {
+    frame_descriptions: frameDescriptions.map((f) => ({
+      timestamp: f.timestamp,
+      app: f.app,
+      action: f.action,
+    })),
+    preliminary_steps: extractedSteps.map((s) => ({
+      step_number: s.step_number,
+      description: s.description,
+      tools_detected: s.tools_detected,
+      action_type: s.action_type,
+      complexity: s.complexity,
+    })),
+    gaps_detected: gaps.length,
+    stage_completed: "gaps",
+  });
 
   // ---- Stage update: followups ----
   await updateAnalysisStage(sessionId, "followups");
@@ -416,10 +472,15 @@ export async function runAnalysisPipeline(sessionId: string) {
     }
   }
 
-  // ---- Update session status ----
+  // ---- Update session status + clear intermediate data ----
   await supabase
     .from("sessions")
-    .update({ status: "reviewed", analysis_stage: null, analysis_error: null })
+    .update({
+      status: "reviewed",
+      analysis_stage: null,
+      analysis_error: null,
+      analysis_intermediate: null,
+    })
     .eq("id", sessionId);
 
   // ---- Auto-tag project ----

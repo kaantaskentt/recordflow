@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { processFrameForPII } from "@/lib/pii";
 
 export async function POST(request: Request) {
   try {
@@ -27,7 +28,11 @@ export async function POST(request: Request) {
     const ts = (timestamp || Date.now().toString()).replace(/[^0-9]/g, "");
     const path = `recordings/${sessionId}/frames/${ts}.jpg`;
 
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const rawBuffer = Buffer.from(await file.arrayBuffer());
+
+    // Run PII detection and redaction before upload
+    // processFrameForPII is non-blocking: returns original buffer on failure
+    const { buffer, redactionCount } = await processFrameForPII(rawBuffer);
 
     const { error: uploadError } = await supabase.storage
       .from("recordings")
@@ -48,7 +53,10 @@ export async function POST(request: Request) {
       data: { publicUrl },
     } = supabase.storage.from("recordings").getPublicUrl(path);
 
-    return NextResponse.json({ path, url: publicUrl }, { status: 201 });
+    return NextResponse.json(
+      { path, url: publicUrl, pii_redactions: redactionCount },
+      { status: 201 }
+    );
   } catch (err) {
     console.error("Frame upload error:", err);
     return NextResponse.json(

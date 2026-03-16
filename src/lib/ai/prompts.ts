@@ -314,3 +314,180 @@ Order by priority (high first). Limit to 10 most important questions.
 
 Return valid JSON only.`;
 }
+
+// ---- Step 5: Agent Instructions Generation ----
+// Aggregates all project data into structured agent instructions
+
+export function buildAgentInstructionsPrompt(
+  projectContext: {
+    name: string;
+    client_name: string;
+    department: string;
+    description: string;
+    briefing_summary: {
+      process_overview: string;
+      tools_mentioned: string[];
+      pain_points: string[];
+      key_entities: { name: string; type: string; description: string }[];
+      open_questions: string[];
+    } | null;
+  },
+  allSteps: {
+    step_number: number;
+    description: string;
+    tools_detected: string[];
+    data_sources: string[];
+    action_type: string;
+    complexity: string;
+    notes: string | null;
+    session_title: string;
+  }[],
+  followUps: {
+    question: string;
+    response: string | null;
+    status: string;
+  }[],
+  watchList: { description: string; category: string; priority: string }[],
+  toolsInventory: { tool: string; count: number }[]
+) {
+  const stepsText = allSteps
+    .map(
+      (s) =>
+        `Step ${s.step_number} [${s.session_title}]: ${s.description}\n  Type: ${s.action_type} | Complexity: ${s.complexity}\n  Tools: ${s.tools_detected.join(", ") || "none"}\n  Data sources: ${s.data_sources.join(", ") || "none"}${s.notes ? `\n  Notes: ${s.notes}` : ""}`
+    )
+    .join("\n\n");
+
+  const answeredFollowUps = followUps.filter(
+    (f) => f.status === "answered" && f.response
+  );
+  const unansweredFollowUps = followUps.filter(
+    (f) => f.status !== "answered" || !f.response
+  );
+
+  const followUpText = answeredFollowUps.length > 0
+    ? answeredFollowUps
+        .map((f) => `Q: ${f.question}\nA: ${f.response}`)
+        .join("\n\n")
+    : "No follow-ups answered yet";
+
+  const unansweredText = unansweredFollowUps.length > 0
+    ? unansweredFollowUps.map((f) => `- ${f.question}`).join("\n")
+    : "";
+
+  const watchListText = watchList
+    .map((w) => `- [${w.priority}] ${w.description} (${w.category})`)
+    .join("\n");
+
+  const toolsText = toolsInventory
+    .map((t) => `- ${t.tool}: used in ${t.count} step(s)`)
+    .join("\n");
+
+  const briefingText = projectContext.briefing_summary
+    ? `Process Overview: ${projectContext.briefing_summary.process_overview}
+Tools Expected: ${projectContext.briefing_summary.tools_mentioned.join(", ")}
+Pain Points: ${projectContext.briefing_summary.pain_points.join("; ")}
+Key Entities: ${projectContext.briefing_summary.key_entities.map((e) => `${e.name} (${e.type}): ${e.description}`).join("; ")}
+Open Questions: ${projectContext.briefing_summary.open_questions.join("; ")}`
+    : "No briefing data available";
+
+  return `You are a solutions architect translating observed business processes into structured agent instructions. These instructions will be used by an engineering team to build automation agents.
+
+## Project Context
+Name: ${projectContext.name}
+Client: ${projectContext.client_name}
+Department: ${projectContext.department || "N/A"}
+Description: ${projectContext.description || "N/A"}
+
+## Briefing Summary
+${briefingText}
+
+## Observed Process Steps (from ${new Set(allSteps.map((s) => s.session_title)).size} recording session(s))
+${stepsText || "No steps recorded yet"}
+
+## Tools Inventory
+${toolsText || "No tools detected"}
+
+## Watch List
+${watchListText || "No watch list items"}
+
+## Answered Follow-up Questions
+${followUpText}
+${unansweredText ? `\n## UNANSWERED Follow-up Questions (these represent knowledge gaps)\n${unansweredText}` : ""}
+
+---
+
+Generate structured agent instructions based on ALL the above data. Your output must be a JSON object with these sections:
+
+{
+  "process_summary": "A clear, concise summary of what this process accomplishes end-to-end. Written as instructions for an agent: 'You will...'",
+  "process_summary_confidence": { "level": "high|medium|low", "reasoning": "Why this confidence level" },
+
+  "steps": [
+    {
+      "step_number": 1,
+      "instruction": "Clear imperative instruction: 'Open X, navigate to Y, enter Z'",
+      "tool_context": "Which tool/system this step uses and how to access it" or null,
+      "data_inputs": ["What data this step needs"],
+      "data_outputs": ["What data this step produces"],
+      "notes": "Edge cases, timing, or special handling" or null
+    }
+  ],
+  "steps_confidence": { "level": "high|medium|low", "reasoning": "..." },
+
+  "decision_logic": [
+    {
+      "condition": "IF condition (be specific with thresholds/values)",
+      "action": "THEN what to do",
+      "related_steps": [3, 4],
+      "source": "observed in recording | inferred from context | stated by user"
+    }
+  ],
+  "decision_logic_confidence": { "level": "high|medium|low", "reasoning": "..." },
+
+  "data_flow": [
+    {
+      "source_system": "Where data comes from",
+      "destination_system": "Where data goes",
+      "data_description": "What data moves",
+      "related_steps": [2, 5]
+    }
+  ],
+  "data_flow_confidence": { "level": "high|medium|low", "reasoning": "..." },
+
+  "exception_handling": [
+    {
+      "scenario": "What can go wrong",
+      "handling": "How to handle it",
+      "related_steps": [3],
+      "source": "observed | inferred"
+    }
+  ],
+  "exception_handling_confidence": { "level": "high|medium|low", "reasoning": "..." },
+
+  "gaps_and_warnings": [
+    {
+      "description": "What information is missing or uncertain",
+      "type": "unanswered_question | missing_logic | unclear_data | incomplete_observation",
+      "impact": "How this gap affects the agent instructions",
+      "related_follow_up_ids": []
+    }
+  ],
+  "unanswered_follow_ups_count": ${unansweredFollowUps.length},
+  "generated_at": "${new Date().toISOString()}"
+}
+
+## Confidence Assessment Guidelines:
+- **high**: Directly observed in recordings AND confirmed by user narration or follow-up answers. Clear, unambiguous.
+- **medium**: Observed but not fully confirmed, or inferred from strong contextual evidence. Reasonable assumptions made.
+- **low**: Inferred from limited evidence, or significant gaps exist. Assumptions may be wrong.
+
+## Critical Rules:
+1. Every unanswered follow-up question MUST appear as a gap_and_warning entry
+2. Decision logic must have specific conditions, not vague rules. If you can't determine specifics, set confidence to "low" and note what's missing
+3. Steps should be actionable — an engineer reading them should know exactly what to build
+4. If the process involves data flowing between systems, the data_flow section must capture every transfer
+5. Exception handling should include both observed exceptions and likely ones you can infer
+6. Be honest about confidence — a "low" confidence with clear reasoning is more valuable than false "high" confidence
+
+Return valid JSON only.`;
+}

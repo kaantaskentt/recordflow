@@ -50,6 +50,9 @@ export interface Project {
   watch_list: WatchListItem[] | null;
   tags: string[];
   automation_score: number | null;
+  agent_instructions: AgentInstructions | null;
+  instructions_generated_at: string | null;
+  instructions_error: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -66,6 +69,7 @@ export interface Session {
   duration_seconds: number | null;
   analysis_stage: AnalysisStage | null;
   analysis_error: string | null;
+  analysis_intermediate: AnalysisIntermediate | null;
   created_at: string;
   completed_at: string | null;
 }
@@ -107,6 +111,83 @@ export interface Narration {
   timestamp: number;
   text: string;
   source: NarrationSource;
+}
+
+// ---- Agent Instructions ----
+
+export type ConfidenceLevel = "high" | "medium" | "low";
+
+export interface ConfidenceAssessment {
+  level: ConfidenceLevel;
+  reasoning: string;
+}
+
+export interface InstructionStep {
+  step_number: number;
+  instruction: string;
+  tool_context: string | null;
+  data_inputs: string[];
+  data_outputs: string[];
+  notes: string | null;
+}
+
+export interface DecisionRule {
+  condition: string;
+  action: string;
+  related_steps: number[];
+  source: string;
+}
+
+export interface DataFlowEntry {
+  source_system: string;
+  destination_system: string;
+  data_description: string;
+  related_steps: number[];
+}
+
+export interface ExceptionRule {
+  scenario: string;
+  handling: string;
+  related_steps: number[];
+  source: "observed" | "inferred";
+}
+
+export interface GapWarning {
+  description: string;
+  type: string;
+  impact: string;
+  related_follow_up_ids: string[];
+}
+
+export interface AgentInstructions {
+  process_summary: string;
+  process_summary_confidence: ConfidenceAssessment;
+  steps: InstructionStep[];
+  steps_confidence: ConfidenceAssessment;
+  decision_logic: DecisionRule[];
+  decision_logic_confidence: ConfidenceAssessment;
+  data_flow: DataFlowEntry[];
+  data_flow_confidence: ConfidenceAssessment;
+  exception_handling: ExceptionRule[];
+  exception_handling_confidence: ConfidenceAssessment;
+  gaps_and_warnings: GapWarning[];
+  unanswered_follow_ups_count: number;
+  generated_at: string;
+}
+
+// ---- Analysis Intermediate Results ----
+
+export interface AnalysisIntermediate {
+  frame_descriptions?: { timestamp: number; app: string; action: string }[];
+  preliminary_steps?: {
+    step_number: number;
+    description: string;
+    tools_detected: string[];
+    action_type: string;
+    complexity: string;
+  }[];
+  gaps_detected?: number;
+  stage_completed: string;
 }
 
 // ---- Recording Log (client-side) ----

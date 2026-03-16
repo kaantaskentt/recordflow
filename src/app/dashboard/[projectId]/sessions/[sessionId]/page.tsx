@@ -35,6 +35,7 @@ import type {
   ActionType,
   Complexity,
   WatchListItem,
+  AnalysisIntermediate,
 } from "@/lib/types";
 
 export default function SessionDetailPage({
@@ -281,6 +282,84 @@ export default function SessionDetailPage({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Intermediate Results (during analysis) */}
+      {session.status === "analyzing" && session.analysis_intermediate && (
+        <div className="mb-6 space-y-3">
+          {/* Frame count */}
+          {session.analysis_intermediate.frame_descriptions && (
+            <div className="p-3 rounded-lg bg-[#0f0f0f] border border-[rgba(34,197,94,0.1)]">
+              <p className="font-mono text-xs text-[rgba(229,231,235,0.45)]">
+                <CheckCircle2 className="w-3 h-3 text-green-400 inline mr-1.5" />
+                {session.analysis_intermediate.frame_descriptions.length} frames analyzed
+              </p>
+            </div>
+          )}
+
+          {/* Preliminary steps */}
+          {session.analysis_intermediate.preliminary_steps &&
+            session.analysis_intermediate.preliminary_steps.length > 0 && (
+              <div>
+                <p className="font-mono text-xs text-purple-400 font-semibold mb-2">
+                  Preliminary Steps ({session.analysis_intermediate.preliminary_steps.length})
+                  <span className="text-[rgba(229,231,235,0.25)] font-normal ml-2">
+                    {session.analysis_intermediate.stage_completed === "steps"
+                      ? "Gap detection in progress..."
+                      : session.analysis_intermediate.stage_completed === "gaps"
+                        ? "Generating follow-ups..."
+                        : ""}
+                  </span>
+                </p>
+                <div className="space-y-2 opacity-75">
+                  {session.analysis_intermediate.preliminary_steps.map((step) => (
+                    <div
+                      key={step.step_number}
+                      className="relative p-3 rounded-lg bg-[#0f0f0f] border border-purple-500/10"
+                    >
+                      <div className="absolute -top-2 right-2 px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 font-mono text-[9px] font-bold uppercase tracking-wider">
+                        Preliminary
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <span className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-purple-500/10 text-purple-400 font-mono text-[10px] font-bold">
+                          {step.step_number}
+                        </span>
+                        <div>
+                          <p className="text-sm text-[#e5e7eb]">{step.description}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span
+                              className={`px-1.5 py-0.5 rounded font-mono text-[9px] font-bold uppercase ${
+                                step.complexity === "automate"
+                                  ? "bg-green-500/10 text-green-400"
+                                  : step.complexity === "ai_assist"
+                                    ? "bg-yellow-500/10 text-yellow-400"
+                                    : "bg-red-500/10 text-red-400"
+                              }`}
+                            >
+                              {step.complexity.replace("_", " ")}
+                            </span>
+                            <span className="font-mono text-[9px] text-[rgba(229,231,235,0.2)] uppercase">
+                              {step.action_type.replace("_", " ")}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          {/* Gaps count */}
+          {session.analysis_intermediate.gaps_detected !== undefined && (
+            <div className="p-3 rounded-lg bg-[#0f0f0f] border border-[rgba(34,197,94,0.1)]">
+              <p className="font-mono text-xs text-[rgba(229,231,235,0.45)]">
+                <CheckCircle2 className="w-3 h-3 text-green-400 inline mr-1.5" />
+                {session.analysis_intermediate.gaps_detected} gaps detected — generating follow-up questions...
+              </p>
+            </div>
+          )}
         </div>
       )}
 

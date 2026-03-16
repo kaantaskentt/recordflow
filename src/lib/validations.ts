@@ -18,6 +18,9 @@ export const updateProjectSchema = z.object({
   briefing_transcript: z.string().optional().nullable(),
   briefing_summary: z.any().optional().nullable(),
   watch_list: z.any().optional().nullable(),
+  agent_instructions: z.any().optional().nullable(),
+  instructions_generated_at: z.string().optional().nullable(),
+  instructions_error: z.string().optional().nullable(),
 });
 
 // ---- Sessions ----
@@ -56,6 +59,13 @@ export const analyzeBriefingSchema = z.object({
 
 export const analyzeSessionSchema = z.object({
   session_id: z.string().uuid("Invalid session ID"),
+});
+
+// ---- Agent Instructions ----
+
+export const generateInstructionsSchema = z.object({
+  project_id: z.string().uuid("Invalid project ID"),
+  force: z.boolean().optional().default(false),
 });
 
 // ---- Steps ----

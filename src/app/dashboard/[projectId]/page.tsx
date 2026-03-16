@@ -32,9 +32,9 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { timeAgo, formatDuration } from "@/lib/utils";
-import type { Project, Session } from "@/lib/types";
+import type { Project, Session, AgentInstructions, ConfidenceLevel } from "@/lib/types";
 
-type Tab = "briefing" | "sessions" | "spec";
+type Tab = "briefing" | "sessions" | "spec" | "instructions";
 
 export default function ProjectDetailPage({
   params,
@@ -83,6 +83,7 @@ export default function ProjectDetailPage({
     { key: "briefing", label: "Briefing", icon: <FileText className="w-3.5 h-3.5" /> },
     { key: "sessions", label: "Sessions", icon: <Video className="w-3.5 h-3.5" /> },
     { key: "spec", label: "Build Spec", icon: <FileOutput className="w-3.5 h-3.5" /> },
+    { key: "instructions", label: "Instructions", icon: <Brain className="w-3.5 h-3.5" /> },
   ];
 
   return (
@@ -153,6 +154,9 @@ export default function ProjectDetailPage({
       )}
       {activeTab === "spec" && (
         <SpecTab project={project} sessions={sessions} />
+      )}
+      {activeTab === "instructions" && (
+        <InstructionsTab project={project} sessions={sessions} />
       )}
     </div>
   );
@@ -1210,6 +1214,416 @@ function SpecTab({
                       x{t.count}
                     </span>
                   </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---- Instructions Tab ----
+
+function ConfidenceBadge({ level, reasoning }: { level: ConfidenceLevel; reasoning: string }) {
+  const color =
+    level === "high"
+      ? "bg-green-500/10 text-green-400 border-green-500/20"
+      : level === "medium"
+        ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"
+        : "bg-red-500/10 text-red-400 border-red-500/20";
+
+  const dotColor =
+    level === "high" ? "bg-green-400" : level === "medium" ? "bg-yellow-400" : "bg-red-400";
+
+  return (
+    <div className="group relative inline-flex items-center gap-1.5">
+      <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+      <span
+        className={`px-1.5 py-0.5 rounded border font-mono text-[9px] font-bold uppercase tracking-wider ${color}`}
+      >
+        {level}
+      </span>
+      <div className="absolute left-0 top-full mt-1 z-50 hidden group-hover:block w-64 p-2 rounded bg-[#1a1a1a] border border-[rgba(229,231,235,0.1)] shadow-xl">
+        <p className="text-[11px] text-[rgba(229,231,235,0.6)] leading-relaxed">{reasoning}</p>
+      </div>
+    </div>
+  );
+}
+
+function InstructionsTab({
+  project,
+  sessions,
+}: {
+  project: Project;
+  sessions: Session[];
+}) {
+  const [instructions, setInstructions] = useState<AgentInstructions | null>(
+    project.agent_instructions || null
+  );
+  const [generatedAt, setGeneratedAt] = useState<string | null>(
+    project.instructions_generated_at || null
+  );
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(project.instructions_error || null);
+
+  const reviewedSessions = sessions.filter((s) => s.status === "reviewed");
+  const allFollowUpsPending = sessions.reduce((sum, s) => {
+    // We'll estimate from the project-level data
+    return sum;
+  }, 0);
+
+  async function generate(force: boolean) {
+    setGenerating(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/instructions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setInstructions(data.agent_instructions);
+        setGeneratedAt(data.instructions_generated_at);
+      } else {
+        setError(data.error || "Failed to generate instructions");
+      }
+    } catch {
+      setError("Failed to generate instructions");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  if (reviewedSessions.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <Brain className="w-8 h-8 mx-auto mb-3 text-[rgba(229,231,235,0.15)]" />
+        <p className="text-sm text-[rgba(229,231,235,0.35)] mb-2">
+          No agent instructions available yet
+        </p>
+        <p className="text-xs text-[rgba(229,231,235,0.25)]">
+          Complete and review at least one recording session to generate instructions.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Generate / Status / Download */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => generate(!instructions)}
+          disabled={generating}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-black font-mono text-xs font-bold rounded hover:bg-green-400 transition-colors disabled:opacity-50"
+        >
+          {generating ? (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Generating...
+            </>
+          ) : instructions ? (
+            <>
+              <RotateCcw className="w-3.5 h-3.5" />
+              Re-generate
+            </>
+          ) : (
+            <>
+              <Brain className="w-3.5 h-3.5" />
+              Generate Agent Instructions
+            </>
+          )}
+        </button>
+        {instructions && (
+          <>
+            <button
+              onClick={() =>
+                window.open(
+                  `/api/projects/${project.id}/instructions?format=json`,
+                  "_blank"
+                )
+              }
+              className="inline-flex items-center gap-2 px-4 py-2 font-mono text-xs font-semibold text-green-400 border border-[rgba(34,197,94,0.2)] rounded hover:bg-green-500/10 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download JSON
+            </button>
+            <button
+              onClick={() =>
+                window.open(
+                  `/api/projects/${project.id}/instructions?format=markdown`,
+                  "_blank"
+                )
+              }
+              className="inline-flex items-center gap-2 px-4 py-2 font-mono text-xs font-semibold text-green-400 border border-[rgba(34,197,94,0.2)] rounded hover:bg-green-500/10 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download .md
+            </button>
+          </>
+        )}
+        {generatedAt && (
+          <span className="text-[10px] font-mono text-[rgba(229,231,235,0.25)]">
+            Generated {timeAgo(generatedAt)}
+          </span>
+        )}
+      </div>
+
+      {error && (
+        <div className="p-3 rounded bg-red-500/10 border border-red-500/20 text-sm text-red-400 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          {error}
+        </div>
+      )}
+
+      {instructions && (
+        <>
+          {/* Unanswered Follow-ups Warning */}
+          {instructions.unanswered_follow_ups_count > 0 && (
+            <div className="p-3 rounded bg-yellow-500/10 border border-yellow-500/20 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm text-yellow-400 font-mono font-semibold">
+                  {instructions.unanswered_follow_ups_count} unanswered follow-up{instructions.unanswered_follow_ups_count !== 1 ? "s" : ""}
+                </p>
+                <p className="text-xs text-[rgba(229,231,235,0.4)] mt-0.5">
+                  Answering follow-up questions will improve instruction accuracy. Re-generate after answering.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Process Summary */}
+          <div className="p-5 rounded-lg bg-[#0f0f0f] border border-[rgba(34,197,94,0.15)]">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-mono text-xs font-bold text-green-400 uppercase tracking-wider">
+                Process Summary
+              </h4>
+              <ConfidenceBadge
+                level={instructions.process_summary_confidence.level}
+                reasoning={instructions.process_summary_confidence.reasoning}
+              />
+            </div>
+            <p className="text-sm text-[#e5e7eb] leading-relaxed">
+              {instructions.process_summary}
+            </p>
+          </div>
+
+          {/* Step-by-Step Instructions */}
+          {instructions.steps.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-mono text-xs font-bold text-green-400 uppercase tracking-wider">
+                  Agent Steps ({instructions.steps.length})
+                </h4>
+                <ConfidenceBadge
+                  level={instructions.steps_confidence.level}
+                  reasoning={instructions.steps_confidence.reasoning}
+                />
+              </div>
+              <div className="space-y-2">
+                {instructions.steps.map((step) => (
+                  <div
+                    key={step.step_number}
+                    className="p-4 rounded-lg bg-[#0f0f0f] border border-[rgba(34,197,94,0.1)]"
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-green-500/10 text-green-400 font-mono text-[10px] font-bold">
+                        {step.step_number}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-[#e5e7eb]">{step.instruction}</p>
+                        {step.tool_context && (
+                          <p className="text-xs text-[rgba(229,231,235,0.35)] mt-1">
+                            <span className="text-purple-400">Tool:</span> {step.tool_context}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap gap-3 mt-2">
+                          {step.data_inputs.length > 0 && (
+                            <div className="text-[10px] font-mono text-[rgba(229,231,235,0.3)]">
+                              <span className="text-blue-400">IN:</span> {step.data_inputs.join(", ")}
+                            </div>
+                          )}
+                          {step.data_outputs.length > 0 && (
+                            <div className="text-[10px] font-mono text-[rgba(229,231,235,0.3)]">
+                              <span className="text-green-400">OUT:</span> {step.data_outputs.join(", ")}
+                            </div>
+                          )}
+                        </div>
+                        {step.notes && (
+                          <p className="text-xs text-[rgba(229,231,235,0.25)] mt-1 italic">
+                            {step.notes}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Decision Logic */}
+          {instructions.decision_logic.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-mono text-xs font-bold text-green-400 uppercase tracking-wider">
+                  Decision Logic ({instructions.decision_logic.length})
+                </h4>
+                <ConfidenceBadge
+                  level={instructions.decision_logic_confidence.level}
+                  reasoning={instructions.decision_logic_confidence.reasoning}
+                />
+              </div>
+              <div className="space-y-2">
+                {instructions.decision_logic.map((rule, i) => (
+                  <div
+                    key={i}
+                    className="p-4 rounded-lg bg-[#0f0f0f] border border-[rgba(34,197,94,0.1)]"
+                  >
+                    <div className="space-y-1.5">
+                      <p className="text-sm text-yellow-400 font-mono">
+                        IF <span className="text-[#e5e7eb]">{rule.condition}</span>
+                      </p>
+                      <p className="text-sm text-green-400 font-mono">
+                        THEN <span className="text-[#e5e7eb]">{rule.action}</span>
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 mt-2">
+                      <span className="font-mono text-[10px] text-[rgba(229,231,235,0.25)] italic">
+                        {rule.source}
+                      </span>
+                      {rule.related_steps.length > 0 && (
+                        <span className="font-mono text-[10px] text-[rgba(229,231,235,0.2)]">
+                          Steps: {rule.related_steps.join(", ")}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Data Flow */}
+          {instructions.data_flow.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-mono text-xs font-bold text-green-400 uppercase tracking-wider">
+                  Data Flow ({instructions.data_flow.length})
+                </h4>
+                <ConfidenceBadge
+                  level={instructions.data_flow_confidence.level}
+                  reasoning={instructions.data_flow_confidence.reasoning}
+                />
+              </div>
+              <div className="space-y-2">
+                {instructions.data_flow.map((flow, i) => (
+                  <div
+                    key={i}
+                    className="p-4 rounded-lg bg-[#0f0f0f] border border-[rgba(34,197,94,0.1)]"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="px-2 py-1 rounded bg-blue-500/10 text-blue-400 font-mono text-xs border border-blue-500/20">
+                        {flow.source_system}
+                      </span>
+                      <Activity className="w-4 h-4 text-[rgba(229,231,235,0.2)]" />
+                      <span className="px-2 py-1 rounded bg-green-500/10 text-green-400 font-mono text-xs border border-green-500/20">
+                        {flow.destination_system}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[rgba(229,231,235,0.45)] mt-2">
+                      {flow.data_description}
+                    </p>
+                    {flow.related_steps.length > 0 && (
+                      <span className="font-mono text-[10px] text-[rgba(229,231,235,0.2)] mt-1 inline-block">
+                        Steps: {flow.related_steps.join(", ")}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Exception Handling */}
+          {instructions.exception_handling.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-mono text-xs font-bold text-green-400 uppercase tracking-wider">
+                  Exception Handling ({instructions.exception_handling.length})
+                </h4>
+                <ConfidenceBadge
+                  level={instructions.exception_handling_confidence.level}
+                  reasoning={instructions.exception_handling_confidence.reasoning}
+                />
+              </div>
+              <div className="space-y-2">
+                {instructions.exception_handling.map((exc, i) => (
+                  <div
+                    key={i}
+                    className="p-4 rounded-lg bg-[#0f0f0f] border border-[rgba(34,197,94,0.1)]"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="text-sm text-[#e5e7eb]">
+                          <span className="text-red-400 font-mono text-xs">WHEN </span>
+                          {exc.scenario}
+                        </p>
+                        <p className="text-sm text-[#e5e7eb] mt-1">
+                          <span className="text-green-400 font-mono text-xs">DO </span>
+                          {exc.handling}
+                        </p>
+                      </div>
+                      <span
+                        className={`px-1.5 py-0.5 rounded font-mono text-[9px] font-bold uppercase tracking-wider ${
+                          exc.source === "observed"
+                            ? "bg-green-500/10 text-green-400 border border-green-500/20"
+                            : "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"
+                        }`}
+                      >
+                        {exc.source}
+                      </span>
+                    </div>
+                    {exc.related_steps.length > 0 && (
+                      <span className="font-mono text-[10px] text-[rgba(229,231,235,0.2)] mt-2 inline-block">
+                        Steps: {exc.related_steps.join(", ")}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Gaps & Warnings */}
+          {instructions.gaps_and_warnings.length > 0 && (
+            <div>
+              <h4 className="font-mono text-xs font-bold text-yellow-400 mb-3 uppercase tracking-wider">
+                Gaps & Warnings ({instructions.gaps_and_warnings.length})
+              </h4>
+              <div className="space-y-2">
+                {instructions.gaps_and_warnings.map((gap, i) => (
+                  <div
+                    key={i}
+                    className="p-4 rounded-lg bg-[#0f0f0f] border border-yellow-500/15"
+                  >
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-sm text-[#e5e7eb]">{gap.description}</p>
+                        <p className="text-xs text-[rgba(229,231,235,0.35)] mt-1">
+                          <span className="text-yellow-400">Impact:</span> {gap.impact}
+                        </p>
+                        <span className="font-mono text-[10px] text-[rgba(229,231,235,0.2)] uppercase mt-1 inline-block">
+                          {gap.type.replace(/_/g, " ")}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
