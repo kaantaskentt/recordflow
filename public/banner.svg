@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" width="800" height="200">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#0a0a0a;stop-opacity:1"/>
+      <stop offset="50%" style="stop-color:#111111;stop-opacity:1"/>
+      <stop offset="100%" style="stop-color:#0a0a0a;stop-opacity:1"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#22c55e;stop-opacity:0.9"/>
+      <stop offset="100%" style="stop-color:#16a34a;stop-opacity:1"/>
+    </linearGradient>
+    <filter id="textGlow">
+      <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#22c55e" flood-opacity="0.4"/>
+    </filter>
+    <filter id="dotGlow">
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#22c55e" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="200" rx="12" fill="url(#bg)"/>
+
+  <!-- Subtle border -->
+  <rect width="800" height="200" rx="12" fill="none" stroke="#22c55e" stroke-opacity="0.15" stroke-width="1"/>
+
+  <!-- Top decorative line -->
+  <line x1="100" y1="0" x2="700" y2="0" stroke="#22c55e" stroke-opacity="0.3" stroke-width="2"/>
+
+  <!-- Logo icon group -->
+  <g transform="translate(240, 55)">
+    <!-- Record dot -->
+    <circle cx="30" cy="22" r="14" fill="url(#glow)" filter="url(#dotGlow)"/>
+    <!-- Flow lines -->
+    <rect x="6" y="50" width="48" height="3" rx="1.5" fill="#22c55e" opacity="0.8"/>
+    <rect x="12" y="60" width="36" height="3" rx="1.5" fill="#22c55e" opacity="0.5"/>
+    <rect x="18" y="70" width="24" height="3" rx="1.5" fill="#22c55e" opacity="0.3"/>
+  </g>
+
+  <!-- Title -->
+  <text x="310" y="105" font-family="monospace, 'Courier New'" font-size="48" font-weight="bold" fill="#ffffff" filter="url(#textGlow)">RecordFlow</text>
+
+  <!-- Subtitle -->
+  <text x="310" y="135" font-family="monospace, 'Courier New'" font-size="14" fill="#22c55e" opacity="0.8">AI-powered process discovery</text>
+
+  <!-- Bottom decorative line -->
+  <line x1="100" y1="200" x2="700" y2="200" stroke="#22c55e" stroke-opacity="0.3" stroke-width="2"/>
+
+  <!-- Decorative dots -->
+  <circle cx="50" cy="100" r="2" fill="#22c55e" opacity="0.2"/>
+  <circle cx="70" cy="80" r="1.5" fill="#22c55e" opacity="0.15"/>
+  <circle cx="60" cy="130" r="1" fill="#22c55e" opacity="0.1"/>
+  <circle cx="750" cy="90" r="2" fill="#22c55e" opacity="0.2"/>
+  <circle cx="730" cy="120" r="1.5" fill="#22c55e" opacity="0.15"/>
+  <circle cx="740" cy="70" r="1" fill="#22c55e" opacity="0.1"/>
+</svg>
